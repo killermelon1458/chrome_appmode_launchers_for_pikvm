@@ -1,0 +1,27 @@
+# Windows junk
+
+Thumbs.db
+Desktop.ini
+
+# PowerShell / script noise
+
+*.log
+
+# Shortcut files (environment-specific)
+
+*.lnk
+
+# Editor / IDE noise
+
+.vscode/
+.idea/
+
+# Python cache (in case of reuse)
+
+**pycache**/
+*.pyc
+
+# OS-specific temp files
+
+*.tmp
+*.bak
