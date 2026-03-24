@@ -150,3 +150,27 @@ Both are valid. Neither replaces the other.
 This project is intentionally simple and unopinionated.
 
 Use, modify, or adapt it freely.
+
+### Pinning to Taskbar (Windows Quirk)
+
+On Windows 11, the **“Pin to taskbar”** option may not appear in normal right-click menus.
+
+If you don’t see it:
+
+1. Open the Start Menu programs folder:
+
+   ```
+   C:\Users\<you>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+   ```
+
+2. Locate your shortcut (`PiKvm.lnk`)
+
+3. **Right-click → “Show more options” → “Pin to taskbar”**
+
+**Important:**
+
+* Pinning from search results often does **not** show the option
+* You must use the actual file or the full Start Menu app list
+
+This is a Windows UI limitation, not an issue with the launcher.
+
