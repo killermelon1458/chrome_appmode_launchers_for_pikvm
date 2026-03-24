@@ -144,14 +144,7 @@ Windows treats launch surfaces differently:
 Both are valid. Neither replaces the other.
 
 ---
-
-## License
-
-This project is intentionally simple and unopinionated.
-
-Use, modify, or adapt it freely.
-
-### Pinning to Taskbar (Windows Quirk)
+## Pinning to Taskbar (Windows Quirk)
 
 On Windows 11, the **“Pin to taskbar”** option may not appear in normal right-click menus.
 
@@ -173,4 +166,11 @@ If you don’t see it:
 * You must use the actual file or the full Start Menu app list
 
 This is a Windows UI limitation, not an issue with the launcher.
+
+
+## License
+
+This project is intentionally simple and unopinionated.
+
+Use, modify, or adapt it freely.
 
