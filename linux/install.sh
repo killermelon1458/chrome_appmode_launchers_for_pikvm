@@ -26,11 +26,17 @@ mkdir -p "$BIN_DIR" "$APP_DIR" "$DATA_DIR" "$CONFIG_DIR"
 
 install -m 755 "$SCRIPT_DIR/pikvm-launcher" "$BIN_PATH"
 
-ICON_SOURCE="$REPO_ROOT/pikvm-light.ico"
+# Prefer PNG for Linux desktop environments.
+# Keep the ICO as a fallback because this repo also supports Windows launchers.
+PNG_ICON_SOURCE="$REPO_ROOT/pi.png"
+ICO_ICON_SOURCE="$REPO_ROOT/pikvm-light.ico"
 ICON_PATH="computer"
 
-if [[ -f "$ICON_SOURCE" ]]; then
-    install -m 644 "$ICON_SOURCE" "$DATA_DIR/pikvm-light.ico"
+if [[ -f "$PNG_ICON_SOURCE" ]]; then
+    install -m 644 "$PNG_ICON_SOURCE" "$DATA_DIR/pikvm-launcher.png"
+    ICON_PATH="$DATA_DIR/pikvm-launcher.png"
+elif [[ -f "$ICO_ICON_SOURCE" ]]; then
+    install -m 644 "$ICO_ICON_SOURCE" "$DATA_DIR/pikvm-light.ico"
     ICON_PATH="$DATA_DIR/pikvm-light.ico"
 fi
 
