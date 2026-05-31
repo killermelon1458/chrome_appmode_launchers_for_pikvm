@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+
+set -u
+
+APP_NAME="PiKVM Launcher"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pikvm-launcher"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+DEFAULT_TARGETS=("https://pikvm")
+DEFAULT_BROWSERS=(
+    chromium
+    chromium-browser
+    google-chrome-stable
+    google-chrome
+    brave-browser
+    microsoft-edge
+    microsoft-edge-stable
+    vivaldi-stable
+    flatpak:org.chromium.Chromium
+    flatpak:com.google.Chrome
+    flatpak:com.brave.Browser
+)
+
+TARGETS=()
+BROWSERS=()
+CONNECT_TIMEOUT=2
+DRY_RUN=0
+BROWSER_CMD=()
+
+trim() {
+    local s="$*"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+strip_quotes() {
+    local s="$1"
+    s="${s%$'\r'}"
+    if [[ "$s" == \"*\" && "$s" == *\" ]]; then
+        s="${s:1:${#s}-2}"
+    elif [[ "$s" == \'*\' && "$s" == *\' ]]; then
+        s="${s:1:${#s}-2}"
+    fi
+    printf '%s' "$s"
+}
+
+show_message() {
+    local title="$1"
+    local body="$2"
+
+    printf '\n%s\n\n%s\n\n' "$title" "$body" >&2
+
+    if [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]; then
+        if command -v zenity >/dev/null 2>&1; then
+            zenity --error --title="$title" --text="$body" 2>/dev/null
+            return
+        fi
+
+        if command -v kdialog >/dev/null 2>&1; then
+            kdialog --title "$title" --error "$body" 2>/dev/null
+            return
+        fi
+
+        if command -v xmessage >/dev/null 2>&1; then
+            xmessage -center "$title
+
+$body" 2>/dev/null
+            return
+        fi
+
+        if command -v notify-send >/dev/null 2>&1; then
+            notify-send "$title" "$body" 2>/dev/null
+            return
+        fi
+    fi
+}
+
+write_default_config() {
+    mkdir -p "$CONFIG_DIR"
+
+    cat > "$CONFIG_FILE" <<'CFG'
+# PiKVM Linux Launcher Config
+#
+# One target= line per PiKVM address.
+# Targets are tried in order.
+#
+# Default:
+#   target=https://pikvm
+#
+# Other examples:
+#   target=https://192.168.1.50
+#   target=https://100.x.y.z
+#   target=https://pikvm.your-tailnet.ts.net
+
+target=https://pikvm
+
+browser=chromium
+browser=chromium-browser
+browser=google-chrome-stable
+browser=google-chrome
+browser=brave-browser
+browser=microsoft-edge
+browser=microsoft-edge-stable
+browser=vivaldi-stable
+browser=flatpak:org.chromium.Chromium
+browser=flatpak:com.google.Chrome
+browser=flatpak:com.brave.Browser
+
+connect_timeout=2
+CFG
+}
+
+ensure_config_exists() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        write_default_config
+    fi
+}
+
+load_config() {
+    local line key value
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        line="$(trim "$line")"
+
+        [[ -z "$line" ]] && continue
+        [[ "$line" == \#* ]] && continue
+        [[ "$line" != *=* ]] && continue
+
+        key="$(trim "${line%%=*}")"
+        value="$(trim "${line#*=}")"
+        value="$(strip_quotes "$value")"
+
+        case "$key" in
+            target)
+                [[ -n "$value" ]] && TARGETS+=("$value")
+                ;;
+            browser)
+                [[ -n "$value" ]] && BROWSERS+=("$value")
+                ;;
+            connect_timeout)
+                if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
+                    CONNECT_TIMEOUT="$value"
+                fi
+                ;;
+        esac
+    done < "$CONFIG_FILE"
+
+    if [[ "${#BROWSERS[@]}" -eq 0 ]]; then
+        BROWSERS=("${DEFAULT_BROWSERS[@]}")
+    fi
+}
+
+normalize_url() {
+    local url="$1"
+    url="$(trim "$url")"
+    url="${url%/}"
+
+    [[ -z "$url" ]] && return
+
+    if [[ "$url" != http://* && "$url" != https://* ]]; then
+        url="https://$url"
+    fi
+
+    printf '%s' "$url"
+}
+
+host_from_url() {
+    local url="$1"
+    local host
+
+    host="${url#*://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+
+    printf '%s' "$host"
+}
+
+reachable() {
+    local url="$1"
+    local host
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -k -sS \
+            --connect-timeout "$CONNECT_TIMEOUT" \
+            --max-time "$CONNECT_TIMEOUT" \
+            "$url" \
+            -o /dev/null >/dev/null 2>&1
+        return $?
+    fi
+
+    host="$(host_from_url "$url")"
+
+    if command -v ping >/dev/null 2>&1; then
+        ping -c 1 -W "$CONNECT_TIMEOUT" "$host" >/dev/null 2>&1
+        return $?
+    fi
+
+    return 1
+}
+
+try_browser() {
+    local candidate="$1"
+    local appid
+
+    if [[ "$candidate" == flatpak:* ]]; then
+        appid="${candidate#flatpak:}"
+
+        if command -v flatpak >/dev/null 2>&1 && flatpak info "$appid" >/dev/null 2>&1; then
+            BROWSER_CMD=(flatpak run "$appid")
+            return 0
+        fi
+
+        return 1
+    fi
+
+    if command -v "$candidate" >/dev/null 2>&1; then
+        BROWSER_CMD=("$candidate")
+        return 0
+    fi
+
+    return 1
+}
+
+find_browser() {
+    local candidate
+
+    for candidate in "${BROWSERS[@]}"; do
+        if try_browser "$candidate"; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+usage() {
+    cat <<HELP
+$APP_NAME
+
+Usage:
+  pikvm-launcher
+  pikvm-launcher --dry-run
+  pikvm-launcher --config-path
+  pikvm-launcher --help
+
+Config:
+  $CONFIG_FILE
+HELP
+}
+
+case "${1:-}" in
+    --dry-run)
+        DRY_RUN=1
+        ;;
+    --config-path)
+        echo "$CONFIG_FILE"
+        exit 0
+        ;;
+    --help|-h)
+        usage
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
+
+ensure_config_exists
+load_config
+
+if [[ "${#TARGETS[@]}" -eq 0 ]]; then
+    show_message \
+        "PiKVM launcher is not configured" \
+        "No target= lines were found.
+
+Edit:
+  $CONFIG_FILE
+
+Add at least one target, for example:
+  target=https://pikvm
+  target=https://192.168.1.50
+  target=https://100.x.y.z"
+    exit 1
+fi
+
+if ! find_browser; then
+    show_message \
+        "No supported browser found" \
+        "Install Chromium, Google Chrome, Brave, Edge, Vivaldi, or a supported Flatpak browser.
+
+Config file:
+  $CONFIG_FILE"
+    exit 1
+fi
+
+SELECTED_TARGET=""
+TRIED_TARGETS=()
+
+for raw_target in "${TARGETS[@]}"; do
+    target="$(normalize_url "$raw_target")"
+    [[ -z "$target" ]] && continue
+
+    TRIED_TARGETS+=("$target")
+
+    if reachable "$target"; then
+        SELECTED_TARGET="$target"
+        break
+    fi
+done
+
+if [[ -z "$SELECTED_TARGET" ]]; then
+    tried_text="$(printf '  %s\n' "${TRIED_TARGETS[@]}")"
+
+    show_message \
+        "PiKVM is not reachable" \
+        "No configured PiKVM target responded.
+
+Tried:
+$tried_text
+Edit:
+  $CONFIG_FILE"
+    exit 1
+fi
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "Config:  $CONFIG_FILE"
+    echo "Browser: ${BROWSER_CMD[*]}"
+    echo "Target:  $SELECTED_TARGET"
+    exit 0
+fi
+
+exec "${BROWSER_CMD[@]}" "--class=PiKVM" "--app=$SELECTED_TARGET"

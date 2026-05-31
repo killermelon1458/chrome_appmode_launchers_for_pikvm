@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PiKVM
+Comment=Launch PiKVM in Chromium app mode
+Exec=@BIN_PATH@
+Icon=@ICON_PATH@
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=true
+StartupWMClass=PiKVM
